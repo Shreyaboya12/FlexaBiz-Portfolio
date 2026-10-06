@@ -1,0 +1,61 @@
+{
+  "info": {
+    "name": "Portfolio API",
+    "description": "Public and admin portfolio API collection for the showcase website.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Hero",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "http://localhost:8000/api/hero", "protocol": "http", "host": ["localhost"], "port": "8000", "path": ["api", "hero"] }
+      }
+    },
+    {
+      "name": "Get Videos",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "http://localhost:8000/api/videos", "protocol": "http", "host": ["localhost"], "port": "8000", "path": ["api", "videos"] }
+      }
+    },
+    {
+      "name": "Get Websites",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "http://localhost:8000/api/websites", "protocol": "http", "host": ["localhost"], "port": "8000", "path": ["api", "websites"] }
+      }
+    },
+    {
+      "name": "Submit Enquiry",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Alicia Reed\",\n  \"email\": \"alicia@example.com\",\n  \"phone\": \"+1 (206) 123 4567\",\n  \"company\": \"Northstar\",\n  \"project_type\": \"Website\",\n  \"message\": \"We need a premium website for our next campaign.\"\n}"
+        },
+        "url": { "raw": "http://localhost:8000/api/enquiries", "protocol": "http", "host": ["localhost"], "port": "8000", "path": ["api", "enquiries"] }
+      }
+    },
+    {
+      "name": "Admin Login",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"admin@portfolio.dev\",\n  \"password\": \"admin123\"\n}"
+        },
+        "url": { "raw": "http://localhost:8000/api/admin/login", "protocol": "http", "host": ["localhost"], "port": "8000", "path": ["api", "admin", "login"] }
+      }
+    },
+    {
+      "name": "Admin Dashboard",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "http://localhost:8000/api/admin/dashboard", "protocol": "http", "host": ["localhost"], "port": "8000", "path": ["api", "admin", "dashboard"] }
+      }
+    }
+  ]
+}
