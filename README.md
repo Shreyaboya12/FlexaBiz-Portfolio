@@ -29,7 +29,16 @@ mysql -u root portfolio_db < database/migrations/20261005_admin_cms.sql
 mysql -u root portfolio_db < database/seed_data.sql
 ```
 
-The migration carries the previous hero heading/subheading into the new title/subtitle fields and adds video type and project work-performed data. It deliberately does not drop the legacy `clients` table, so its data is preserved; all client API and CMS surfaces are removed.
+For a database that has already run `20261005_admin_cms.sql`, back it up and apply the video category migration once, then refresh the category seed:
+
+```text
+mysql -u root portfolio_db < database/migrations/20261010_video_categories.sql
+mysql -u root portfolio_db < database/seed_data.sql
+```
+
+This migration preserves the existing `videos.category` text values, creates category records for the six initial categories and every existing distinct value, and assigns each video a foreign key without changing or deleting video records or files. `videos.category` remains as a compatibility field; `category_id` is the relational category assignment used by the API. Categories cannot be deleted while videos reference them.
+
+The earlier migration carries the previous hero heading/subheading into the new title/subtitle fields and adds video type and project work-performed data. It deliberately does not drop the legacy `clients` table, so its data is preserved; all client API and CMS surfaces are removed.
 
 Database connection environment variables are `PORTFOLIO_DB_HOST`, `PORTFOLIO_DB_NAME`, `PORTFOLIO_DB_USER`, and `PORTFOLIO_DB_PASSWORD`. Defaults target the standard local XAMPP MySQL install (`127.0.0.1`, `portfolio_db`, `root`, empty password). To allow a different Vite origin, set `PORTFOLIO_CORS_ORIGINS` to a comma-separated allowlist.
 
@@ -62,6 +71,8 @@ For Apache/XAMPP, configure the virtual host/document root to `backend/public` a
 
 - `GET /api/hero` – active hero slides, ordered by display order
 - `GET /api/videos`
+- `GET /api/video-categories`
+- `GET /api/videos?category_id={id}` – active videos in a category
 - `GET /api/websites`
 - `GET /api/websites/{id}`
 - `GET /api/other-work`
@@ -77,6 +88,7 @@ All routes below require the PHP session returned by login. Use `credentials: "i
 - `GET /api/admin/dashboard`
 - `GET|POST /api/admin/hero`; `GET|PUT|DELETE /api/admin/hero/{id}`
 - `GET|POST /api/admin/videos`; `GET|PUT|DELETE /api/admin/videos/{id}`
+- `GET|POST /api/admin/video-categories`; `GET|PUT|DELETE /api/admin/video-categories/{id}`
 - `GET|POST /api/admin/websites`; `GET|PUT|DELETE /api/admin/websites/{id}`
 - `GET /api/admin/websites/{id}/images`
 - `POST /api/admin/websites/{id}/images`

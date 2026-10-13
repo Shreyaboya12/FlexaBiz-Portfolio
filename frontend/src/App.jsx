@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   BrowserRouter,
   Link,
   NavLink,
+  Navigate,
   Route,
   Routes,
-  useParams,
 } from 'react-router-dom';
 import { apiRequest } from './lib/api';
 import './App.css';
@@ -14,12 +14,14 @@ import './App.css';
 const endpoints = {
   hero: '/api/hero',
   videos: '/api/videos',
+  videoCategories: '/api/video-categories',
   services: '/api/services',
 };
 
 const sectionNames = {
   hero: 'hero slides',
   videos: 'videos',
+  videoCategories: 'video categories',
   services: 'services',
 };
 
@@ -98,6 +100,7 @@ function App() {
 function PortfolioApp() {
   const [sections, setSections] = useState(initialSections);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const menuButtonRef = useRef(null);
   const [activeVideo, setActiveVideo] = useState(null);
   const [formState, setFormState] = useState({ status: 'idle', message: '', payload: null });
 
@@ -140,15 +143,27 @@ function PortfolioApp() {
           <Link to="/" className="site-name" aria-label="FlexaBiz Portfolio home">FlexaBiz Portfolio</Link>
           <button
             type="button"
+            ref={menuButtonRef}
             className="menu-toggle"
             aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={mobileMenuOpen}
+            aria-controls="main-navigation"
             onClick={() => setMobileMenuOpen((open) => !open)}
           >
             <span />
             <span />
           </button>
-          <nav className={`main-nav${mobileMenuOpen ? ' is-open' : ''}`} aria-label="Main navigation">
+          <nav
+            id="main-navigation"
+            className={`main-nav${mobileMenuOpen ? ' is-open' : ''}`}
+            aria-label="Main navigation"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && mobileMenuOpen) {
+                setMobileMenuOpen(false);
+                menuButtonRef.current?.focus();
+              }
+            }}
+          >
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
@@ -181,7 +196,9 @@ function PortfolioApp() {
             element={(
               <VideosPage
                 section={sections.videos}
+                categorySection={sections.videoCategories}
                 onRetry={() => loadSection('videos', setSections)}
+                onRetryCategories={() => loadSection('videoCategories', setSections)}
                 onPlayVideo={setActiveVideo}
               />
             )}
@@ -190,7 +207,7 @@ function PortfolioApp() {
             path="/services"
             element={<ServicesPage section={sections.services} onRetry={() => loadSection('services', setSections)} />}
           />
-          <Route path="/services/:id" element={<ServiceDetailPage section={sections.services} onRetry={() => loadSection('services', setSections)} />} />
+          <Route path="/services/:id" element={<Navigate to="/services" replace />} />
           <Route
             path="/contact"
             element={(
@@ -239,10 +256,12 @@ function SectionState({ section, onRetry, emptyMessage }) {
 
 function PageIntro({ eyebrow, title, description }) {
   return (
-    <section className="page-intro container">
-      <p className="eyebrow">{eyebrow}</p>
-      <h1>{title}</h1>
-      {description && <p className="page-description">{description}</p>}
+    <section className="page-intro">
+      <div className="container">
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        {description && <p className="page-description">{description}</p>}
+      </div>
     </section>
   );
 }
@@ -454,13 +473,44 @@ function HeroMedia({ slide, fallbackSlide }) {
   return <div className="hero-media-empty" />;
 }
 
-function VideosPage({ section, onRetry, onPlayVideo }) {
+function VideosPage({ section, categorySection, onRetry, onRetryCategories, onPlayVideo }) {
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const videos = selectedCategory === 'all'
+    ? section.data
+    : section.data.filter((video) => String(video.category_id) === selectedCategory);
+
   return (
     <>
       <PageIntro eyebrow="Film & motion" title="Videos" description="Product films, brand stories and moving images made to bring good ideas to life." />
       <section className="content-section page-content"><div className="container">
         <SectionState section={section} onRetry={onRetry} emptyMessage="No videos are available yet. Please check back soon." />
-        {!section.loading && !section.error && section.data.length > 0 && <div className="video-grid">{section.data.map((video) => <VideoCard key={video.id} video={video} onPlay={onPlayVideo} />)}</div>}
+        {!section.loading && !section.error && section.data.length > 0 && (
+          <>
+            <div className="video-filter">
+              <label htmlFor="video-category-filter">Filter by category</label>
+              <select
+                id="video-category-filter"
+                value={selectedCategory}
+                onChange={(event) => setSelectedCategory(event.target.value)}
+                disabled={categorySection.loading || categorySection.error}
+              >
+                <option value="all">All categories</option>
+                {categorySection.data.map((category) => (
+                  <option key={category.id} value={String(category.id)}>{category.name}</option>
+                ))}
+              </select>
+            </div>
+            {categorySection.error && (
+              <div className="state-panel state-error" role="alert">
+                <p>{categorySection.error}</p>
+                <button type="button" className="text-button" onClick={onRetryCategories}>Try again</button>
+              </div>
+            )}
+            {videos.length
+              ? <div className="video-grid">{videos.map((video) => <VideoCard key={video.id} video={video} onPlay={onPlayVideo} />)}</div>
+              : <div className="state-panel">No videos are available in this category yet.</div>}
+          </>
+        )}
       </div></section>
     </>
   );
@@ -479,8 +529,15 @@ function ServicesPage({ section, onRetry }) {
 }
 
 function VideoCard({ video, onPlay }) {
+  const prefersReducedMotion = useReducedMotion();
   return (
-    <article className="video-card">
+    <motion.article
+      className="video-card"
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-30px' }}
+      transition={{ duration: 0.4, ease: [0.2, 0.8, 0.2, 1] }}
+    >
       <button type="button" className="video-thumbnail" onClick={() => onPlay(video)} aria-label={`Play ${video.title || 'video'}`}>
         <VideoCardPreview video={video} />
         <span className="play-control" aria-hidden="true">▶</span>
@@ -490,7 +547,7 @@ function VideoCard({ video, onPlay }) {
         <h2>{video.title || 'Untitled video'}</h2>
         {video.description && <p>{video.description}</p>}
       </div>
-    </article>
+    </motion.article>
   );
 }
 
@@ -498,16 +555,37 @@ function VideoCardPreview({ video }) {
   const url = video.video_url || '';
   const youtubeId = getYouTubeId(url);
   const vimeoId = url.match(/vimeo\.com\/(?:video\/)?(\d+)/)?.[1];
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const [fallbackThumbnailFailed, setFallbackThumbnailFailed] = useState(false);
 
-  if (video.thumbnail) return <img src={video.thumbnail} alt="" loading="lazy" />;
-  if (youtubeId) return <img src={`https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`} alt="" loading="lazy" />;
+  if (video.thumbnail && !thumbnailFailed) {
+    return (
+      <img
+        src={video.thumbnail}
+        alt=""
+        loading="lazy"
+        onError={() => setThumbnailFailed(true)}
+      />
+    );
+  }
+  if (youtubeId && !fallbackThumbnailFailed) {
+    return (
+      <img
+        src={`https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`}
+        alt=""
+        loading="lazy"
+        onError={() => setFallbackThumbnailFailed(true)}
+      />
+    );
+  }
+  if (youtubeId) return <div className="video-card-preview-empty" aria-hidden="true" />;
   if (vimeoId) {
     return (
       <iframe
         className="video-card-preview-frame"
         title={`${video.title || 'Video'} preview`}
-        src={`https://player.vimeo.com/video/${vimeoId}?background=1&autoplay=1&muted=1&loop=1&autopause=0`}
-        allow="autoplay; fullscreen; picture-in-picture"
+        src={`https://player.vimeo.com/video/${vimeoId}?title=0&byline=0&portrait=0`}
+        allow="fullscreen; picture-in-picture"
         tabIndex="-1"
       />
     );
@@ -518,8 +596,6 @@ function VideoCardPreview({ video }) {
         className="video-card-preview"
         src={url}
         muted
-        autoPlay
-        loop
         playsInline
         preload="metadata"
         aria-hidden="true"
@@ -531,24 +607,27 @@ function VideoCardPreview({ video }) {
 }
 
 function ServiceCard({ service }) {
+  const prefersReducedMotion = useReducedMotion();
   const image = service.image_url || service.image || '';
   return (
-    <article className="service-card">
-      <Link to={`/services/${service.id}`} className="card-image-link" aria-label={`Read about ${service.name || service.title}`}>
-        {image ? <img src={image} alt="" loading="lazy" /> : <MediaPlaceholder label="Service imagery will be added soon" />}
-      </Link>
-      <div className="card-copy">
-        <p className="card-meta">{service.featured ? 'Featured service' : 'Service'}</p>
-        <h2><Link to={`/services/${service.id}`}>{service.name || service.title}</Link></h2>
-        {service.short_description && <p>{service.short_description}</p>}
-        <Link to={`/services/${service.id}`} className="text-button">Service details <span aria-hidden="true">↗</span></Link>
+    <motion.article
+      className="service-card"
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-30px' }}
+      transition={{ duration: 0.4, ease: [0.2, 0.8, 0.2, 1] }}
+    >
+      <div className="service-card-image">
+        {image
+          ? <img src={image} alt="" loading="lazy" />
+          : <div className="service-image-empty" role="img" aria-label={`${service.name || service.title || 'Service'} image unavailable`} />}
       </div>
-    </article>
+      <div className="card-copy">
+        <h2>{service.name || service.title}</h2>
+        {service.short_description && <p>{service.short_description}</p>}
+      </div>
+    </motion.article>
   );
-}
-
-function MediaPlaceholder({ label }) {
-  return <div className="media-placeholder">{label}</div>;
 }
 
 function ContactCta() {
@@ -606,29 +685,7 @@ function EnquiryForm({ formState, onSubmit, onRetry }) {
   );
 }
 
-function ServiceDetailPage({ section, onRetry }) {
-  const { id } = useParams();
-  if (section.loading || section.error) {
-    return <div className="container page-status"><SectionState section={section} onRetry={onRetry} emptyMessage="" /></div>;
-  }
-  const service = section.data.find((item) => String(item.id) === String(id));
-  if (!service) return <div className="container page-status"><h1>Service not found.</h1><Link to="/services" className="text-button">Back to services</Link></div>;
-  const image = service.image_url || service.image || '';
-  return (
-    <article className="detail-page service-detail">
-      <div className="container detail-heading">
-        <Link to="/services" className="back-link">← All services</Link>
-        <p className="eyebrow">Our services</p><h1>{service.name || service.title || 'Service'}</h1>
-        {service.short_description && <p className="detail-client">{service.short_description}</p>}
-      </div>
-      {image && <div className="container detail-cover"><img src={image} alt={service.name || service.title} /></div>}
-      <div className="container service-detail-copy">
-        <p>{service.full_description || service.short_description || 'Service details will be added soon.'}</p>
-        <Link to="/contact" className="button button-dark">Discuss this service <span aria-hidden="true">↗</span></Link>
-      </div>
-    </article>
-  );
-}
+
 
 function VideoModal({ video, onClose }) {
   useEffect(() => {

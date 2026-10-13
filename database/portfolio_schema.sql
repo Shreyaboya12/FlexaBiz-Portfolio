@@ -26,11 +26,23 @@ CREATE TABLE hero_sections (
     KEY idx_hero_active_order (active, display_order)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE video_categories (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL,
+    display_order INT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_video_categories_name (name),
+    KEY idx_video_categories_order (display_order, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE videos (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     title VARCHAR(255) NOT NULL,
     description TEXT,
     category VARCHAR(100) NOT NULL,
+    category_id INT UNSIGNED NOT NULL,
     thumbnail VARCHAR(2000) DEFAULT NULL,
     video_url VARCHAR(2000) NOT NULL,
     video_type VARCHAR(30) NOT NULL DEFAULT 'other',
@@ -40,7 +52,9 @@ CREATE TABLE videos (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    KEY idx_videos_active_order (active, display_order)
+    KEY idx_videos_active_order (active, display_order),
+    KEY idx_videos_category (category_id),
+    CONSTRAINT fk_videos_category FOREIGN KEY (category_id) REFERENCES video_categories(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE websites (

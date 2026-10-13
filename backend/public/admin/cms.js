@@ -20,7 +20,7 @@
       endpoint: 'videos',
       fields: [
         { name: 'title', label: 'Title', required: true },
-        { name: 'category', label: 'Category', type: 'select', required: true, options: ['Product Shoot', 'Brand Video', 'Advertisement', 'Social Media', 'Commercial', 'Other'] },
+        { name: 'category_id', label: 'Category', type: 'select', required: true, options: [] },
         { name: 'description', label: 'Description', type: 'textarea', full: true },
         { name: 'video_type', label: 'Video type', type: 'select', default: 'direct', options: ['youtube', 'vimeo', 'direct', 'other'] },
         { name: 'video', label: 'Video file', type: 'file', accept: '.mp4,.webm,.mov', currentField: 'video_url', maxBytes: 100 * 1024 * 1024, required: true },
@@ -29,6 +29,15 @@
         { name: 'active', label: 'Active', type: 'checkbox', checked: true },
       ],
       columns: ['title', 'category', 'display_order', 'featured', 'active'],
+    },
+    'video-categories': {
+      label: 'Video Categories',
+      endpoint: 'video-categories',
+      fields: [
+        { name: 'name', label: 'Category name', required: true },
+        { name: 'display_order', label: 'Display order', type: 'number', default: 1 },
+      ],
+      columns: ['name', 'display_order'],
     },
     services: {
       label: 'Services',
@@ -65,6 +74,7 @@
   let selectedModule = 'dashboard';
   let records = [];
   let editing = null;
+  let videoCategories = [];
   let dialogResolver = null;
   let dialogReturnFocus = null;
 
@@ -293,10 +303,12 @@
                      <select class="small-button" data-action="status" aria-label="Update enquiry status">
                        ${['New', 'Contacted', 'Completed'].map((status) => `<option ${record.status === status ? 'selected' : ''}>${status}</option>`).join('')}
                      </select>`
+                  : selectedModule === 'video-categories'
+                    ? `<button type="button" class="small-button" data-action="edit">Edit</button>
+                       <label class="small-button">Order <input data-action="order" type="number" min="0" value="${Number(record.display_order) || 0}" style="width:54px;border:0"></label>`
                   : ['videos', 'services'].includes(selectedModule)
                     ? `<button type="button" class="small-button" data-action="view">View</button>
                        <button type="button" class="small-button" data-action="edit">Edit</button>
-                       <button type="button" class="danger small-button" data-action="delete">Delete</button>
                        <button type="button" class="small-button ${Number(record.active) ? 'active-action-disable' : 'active-action-enable'}" data-action="active">${Number(record.active) ? 'Disable' : 'Enable'}</button>
                        <button type="button" class="small-button" data-action="featured">${Number(record.featured) ? 'Unfeature' : 'Feature'}</button>
                        <label class="small-button">Order <input data-action="order" type="number" min="0" value="${Number(record.display_order) || 0}" style="width:54px;border:0"></label>`
@@ -324,7 +336,9 @@
   }
 
   function renderField(field, record) {
-    const value = record ? listValue(record, field.name) : (field.default ?? (field.checked ? 1 : ''));
+    const value = record
+      ? (field.name === 'category_id' ? record.category_id : listValue(record, field.name))
+      : (field.default ?? (field.checked ? 1 : ''));
     const id = `field-${field.name}`;
     if (field.type === 'file') {
       const currentMedia = record?.[field.currentField] || '';
@@ -356,14 +370,21 @@
     }
     if (field.type === 'select') {
       const options = [...field.options];
-      if (value && !options.includes(value)) options.unshift(value);
-      return `<div class="field"><label for="${id}">${escapeHtml(field.label)}${field.required ? ' *' : ''}</label><select id="${id}" name="${field.name}" ${field.required ? 'required' : ''}>${options.map((option) => `<option value="${escapeHtml(option)}" ${value === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></div>`;
+      const optionValue = (option) => typeof option === 'object' ? String(option.id) : option;
+      const optionLabel = (option) => typeof option === 'object' ? option.name : option;
+      if (value && !options.some((option) => optionValue(option) === String(value))) {
+        options.unshift({ id: value, name: record.category || String(value) });
+      }
+      return `<div class="field"><label for="${id}">${escapeHtml(field.label)}${field.required ? ' *' : ''}</label><select id="${id}" name="${field.name}" ${field.required ? 'required' : ''}>${options.map((option) => `<option value="${escapeHtml(optionValue(option))}" ${String(value) === optionValue(option) ? 'selected' : ''}>${escapeHtml(optionLabel(option))}</option>`).join('')}</select></div>`;
     }
     return `<div class="field${field.name === 'display_order' ? ' order-field' : ''}"><label for="${id}">${escapeHtml(field.label)}${field.required ? ' *' : ''}</label><input id="${id}" name="${field.name}" type="${field.type || 'text'}" value="${escapeHtml(value)}" ${field.required ? 'required' : ''} ${field.type === 'number' ? 'min="0"' : ''}></div>`;
   }
 
   function openForm(record = null) {
     const config = modules[selectedModule];
+    if (selectedModule === 'videos') {
+      config.fields.find((field) => field.name === 'category_id').options = videoCategories;
+    }
     editing = record;
     document.querySelector('#modal-title').textContent = `${record ? 'Edit' : 'Add'} ${config.label.replace(/s$/, '')}`;
     form.innerHTML = `
@@ -400,6 +421,15 @@
     }
 
     const config = modules[moduleName];
+    if (moduleName === 'videos') {
+      try {
+        videoCategories = await request('/admin/video-categories');
+        config.fields.find((field) => field.name === 'category_id').options = videoCategories;
+      } catch (error) {
+        showNotice(`Video categories could not be loaded: ${error.message}`, 'error');
+        return;
+      }
+    }
     content.insertAdjacentHTML('beforeend', `
       <div class="page-heading">
         <div><h2>${escapeHtml(config.label)}</h2><p class="subtle">Manage ${escapeHtml(config.label.toLowerCase())} records.</p></div>
@@ -569,8 +599,9 @@
         showNotice('Featured state updated.');
         await refreshSelected();
       } else if (action === 'order') {
-        const displayOrder = Number(button.querySelector('input').value);
-        if (!Number.isInteger(displayOrder) || displayOrder < 0) {
+        const orderInput = button.matches('input') ? button : button.querySelector('input');
+        const displayOrder = Number(orderInput?.value);
+        if (!orderInput || !Number.isInteger(displayOrder) || displayOrder < 0) {
           showNotice('Display order must be a non-negative integer.', 'error');
           return;
         }

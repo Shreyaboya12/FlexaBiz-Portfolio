@@ -1,12 +1,14 @@
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   font-family: 'Inter', 'Segoe UI', sans-serif;
-  background: #f7f6f4;
-  color: #0f172a;
+  background: #0b0d12;
+  color: #edf3ff;
+  overflow-x: hidden;
 }
 
 * {

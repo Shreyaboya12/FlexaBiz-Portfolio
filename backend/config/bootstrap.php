@@ -471,6 +471,17 @@ function fetchWebsite(PDO $pdo, int $id, bool $activeOnly = false): ?array
 
 function fetchEntity(PDO $pdo, string $entity, ?int $id = null, bool $public = false): array|null
 {
+    if ($entity === 'video-categories') {
+        if ($id !== null) {
+            $statement = $pdo->prepare('SELECT * FROM video_categories WHERE id = :id');
+            $statement->execute(['id' => $id]);
+            return $statement->fetch() ?: null;
+        }
+        $statement = $pdo->prepare('SELECT * FROM video_categories ORDER BY display_order, id');
+        $statement->execute();
+        return $statement->fetchAll();
+    }
+
     if ($entity === 'hero') {
         if ($id !== null) {
             $statement = $pdo->prepare('SELECT * FROM hero_sections WHERE id = :id');
@@ -538,6 +549,47 @@ function fetchEntity(PDO $pdo, string $entity, ?int $id = null, bool $public = f
         return $statement->fetchAll();
     }
 
+    if ($entity === 'videos') {
+        $where = $public ? ' WHERE videos.active = 1' : '';
+        $parameters = [];
+        if ($id !== null) {
+            $where .= ($where === '' ? ' WHERE' : ' AND') . ' videos.id = :id';
+            $parameters['id'] = $id;
+        }
+        if ($public && isset($_GET['category_id'])) {
+            $categoryId = filter_var($_GET['category_id'], FILTER_VALIDATE_INT);
+            if ($categoryId === false || $categoryId < 1) {
+                jsonResponse(false, 'Invalid video category ID.', [], ['category_id' => ['Category ID must be a positive integer.']], 422);
+            }
+            $where .= ($where === '' ? ' WHERE' : ' AND') . ' videos.category_id = :category_id';
+            $parameters['category_id'] = $categoryId;
+        }
+        $statement = $pdo->prepare(
+            'SELECT videos.*, video_categories.name AS category_label
+             FROM videos
+             LEFT JOIN video_categories ON video_categories.id = videos.category_id'
+             . $where
+             . ($id === null ? ' ORDER BY videos.display_order, videos.id' : '')
+        );
+        $statement->execute($parameters);
+        $records = $id === null ? $statement->fetchAll() : ($statement->fetch() ?: null);
+        if ($records === null) {
+            return null;
+        }
+        if ($id !== null) {
+            $records = [$records];
+        }
+        foreach ($records as &$record) {
+            if (is_string($record['category_label'] ?? null)) {
+                $record['category'] = $record['category_label'];
+            }
+            unset($record['category_label']);
+            $record['video_url'] = publicMediaPath($record['video_url'] ?? null, 'videos');
+        }
+        unset($record);
+        return $id === null ? $records : $records[0];
+    }
+
     $tables = [
         'videos' => 'videos',
         'other-work' => 'other_work',
@@ -594,12 +646,19 @@ function validateEntity(string $entity, array $input, array &$errors): array
     }
 
     if ($entity === 'videos') {
-        $category = validateText($input, 'category', 'Category', 100, true, $errors);
+        $rawCategoryId = $input['category_id'] ?? null;
+        $categoryId = $rawCategoryId === null || $rawCategoryId === ''
+            ? null
+            : filter_var($rawCategoryId, FILTER_VALIDATE_INT);
+        if ($rawCategoryId !== null && $rawCategoryId !== '' && ($categoryId === false || $categoryId < 1)) {
+            $errors['category_id'] = ['Select a valid video category.'];
+        }
+        $category = validateText($input, 'category', 'Category', 100, false, $errors);
         $videoType = array_key_exists('video_type', $input)
             ? validateText($input, 'video_type', 'Video type', 30, false, $errors)
             : null;
-        if ($category !== null && !in_array($category, ['Product Shoot', 'Brand Video', 'Advertisement', 'Social Media', 'Commercial', 'Other'], true)) {
-            $errors['category'] = ['Select a valid video category.'];
+        if ($categoryId === null && $category === '') {
+            $errors['category_id'] = ['Select a video category.'];
         }
         if ($videoType !== null && $videoType !== '' && !in_array($videoType, ['youtube', 'vimeo', 'direct', 'other'], true)) {
             $errors['video_type'] = ['Video type must be YouTube, Vimeo, direct, or other.'];
@@ -608,6 +667,7 @@ function validateEntity(string $entity, array $input, array &$errors): array
             'title' => validateText($input, 'title', 'Title', 255, true, $errors),
             'description' => validateText($input, 'description', 'Description', 10000, false, $errors),
             'category' => $category,
+            'category_id' => $categoryId,
             'thumbnail' => validateUrl($input, 'thumbnail', 'Thumbnail URL', false, $errors),
             'video_url' => validateUrl($input, 'video_url', 'Video URL', false, $errors),
             'display_order' => validateOrder($input, $errors),
@@ -618,6 +678,13 @@ function validateEntity(string $entity, array $input, array &$errors): array
             $data['video_type'] = $videoType;
         }
         return $data;
+    }
+
+    if ($entity === 'video-categories') {
+        return [
+            'name' => validateText($input, 'name', 'Category name', 100, true, $errors),
+            'display_order' => validateOrder($input, $errors),
+        ];
     }
 
     if ($entity === 'websites') {
@@ -735,6 +802,28 @@ function saveEntity(PDO $pdo, string $entity, string $method, ?int $id, array $p
 
     $errors = [];
     $data = validateEntity($entity, $payload, $errors);
+    if ($entity === 'videos' && !$errors) {
+        if ($data['category_id'] === null) {
+            $categoryStatement = $pdo->prepare('SELECT id FROM video_categories WHERE name = :name');
+            $categoryStatement->execute(['name' => $data['category']]);
+            $resolvedId = $categoryStatement->fetchColumn();
+            if ($resolvedId === false) {
+                $errors['category_id'] = ['Select an existing video category.'];
+            } else {
+                $data['category_id'] = (int)$resolvedId;
+            }
+        }
+        if (!$errors) {
+            $categoryStatement = $pdo->prepare('SELECT name FROM video_categories WHERE id = :id');
+            $categoryStatement->execute(['id' => $data['category_id']]);
+            $categoryName = $categoryStatement->fetchColumn();
+            if ($categoryName === false) {
+                $errors['category_id'] = ['Select an existing video category.'];
+            } else {
+                $data['category'] = $categoryName;
+            }
+        }
+    }
     $mediaUpload = null;
     $existingMedia = [];
     $mediaKind = in_array($entity, ['videos', 'services'], true) ? $entity : null;
@@ -793,8 +882,24 @@ function saveEntity(PDO $pdo, string $entity, string $method, ?int $id, array $p
             $table = 'hero_sections';
         } elseif ($entity === 'other-work') {
             $table = 'other_work';
+        } elseif ($entity === 'video-categories') {
+            $table = 'video_categories';
         } else {
             $table = $entity;
+        }
+
+        if ($entity === 'video-categories') {
+            $duplicateSql = 'SELECT id FROM video_categories WHERE name = :name' . ($id !== null ? ' AND id <> :id' : '');
+            $duplicate = $pdo->prepare($duplicateSql);
+            $duplicateParameters = ['name' => $data['name']];
+            if ($id !== null) {
+                $duplicateParameters['id'] = $id;
+            }
+            $duplicate->execute($duplicateParameters);
+            if ($duplicate->fetchColumn() !== false) {
+                $pdo->rollBack();
+                jsonResponse(false, 'Validation failed.', [], ['name' => ['A video category with this name already exists.']], 422);
+            }
         }
 
         if ($method === 'POST') {
@@ -809,6 +914,11 @@ function saveEntity(PDO $pdo, string $entity, string $method, ?int $id, array $p
             $data['id'] = $id;
             $statement = $pdo->prepare('UPDATE `' . $table . '` SET ' . implode(', ', $assignments) . ' WHERE id = :id');
             $statement->execute($data);
+        }
+
+        if ($entity === 'video-categories') {
+            $syncCategoryName = $pdo->prepare('UPDATE videos SET category = :category WHERE category_id = :category_id');
+            $syncCategoryName->execute(['category' => $data['name'], 'category_id' => $id]);
         }
 
         if ($entity === 'websites' && $images !== null) {
@@ -839,6 +949,7 @@ function deleteEntity(PDO $pdo, string $entity, int $id): void
     $tables = [
         'hero' => 'hero_sections',
         'videos' => 'videos',
+        'video-categories' => 'video_categories',
         'websites' => 'websites',
         'website-images' => 'website_images',
         'other-work' => 'other_work',
@@ -849,8 +960,23 @@ function deleteEntity(PDO $pdo, string $entity, int $id): void
         jsonResponse(false, 'Route not found.', [], [], 404);
     }
 
+    if ($entity === 'video-categories') {
+        $references = $pdo->prepare('SELECT COUNT(*) FROM videos WHERE category_id = :category_id');
+        $references->execute(['category_id' => $id]);
+        if ((int)$references->fetchColumn() > 0) {
+            jsonResponse(false, 'Category is still in use.', [], ['category_id' => ['Reassign or delete its videos before deleting this category.']], 409);
+        }
+    }
+
     $statement = $pdo->prepare('DELETE FROM `' . $tables[$entity] . '` WHERE id = :id');
-    $statement->execute(['id' => $id]);
+    try {
+        $statement->execute(['id' => $id]);
+    } catch (PDOException $exception) {
+        if ($entity === 'video-categories' && $exception->getCode() === '23000') {
+            jsonResponse(false, 'Category is still in use.', [], ['category_id' => ['Reassign or delete its videos before deleting this category.']], 409);
+        }
+        throw $exception;
+    }
     if ($statement->rowCount() === 0) {
         jsonResponse(false, 'Resource not found.', [], ['id' => ['Resource not found.']], 404);
     }
@@ -929,7 +1055,7 @@ function handleAdminApi(PDO $pdo, array $segments, string $method): never
         }
     }
 
-    if (!in_array($entity, ['hero', 'videos', 'websites', 'website-images', 'other-work', 'services', 'enquiries'], true)) {
+    if (!in_array($entity, ['hero', 'videos', 'video-categories', 'websites', 'website-images', 'other-work', 'services', 'enquiries'], true)) {
         jsonResponse(false, 'Route not found.', [], [], 404);
     }
     $id = null;
@@ -1069,6 +1195,7 @@ function handlePublicApi(): never
             $publicEntity = [
                 'hero' => 'hero',
                 'videos' => 'videos',
+                'video-categories' => 'video-categories',
                 'websites' => 'websites',
                 'other-work' => 'other-work',
                 'services' => 'services',
